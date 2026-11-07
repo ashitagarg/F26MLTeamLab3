@@ -345,8 +345,7 @@ def causal_mask(n):
 
     Hint: np.triu(..., k=1)
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    return np.triu(np.ones((n, n), dtype=bool), k=1)
 
 # ============================================================================
 # 2. Scaled dot-product attention:   softmax(Q K^T / sqrt(d_k)) V
@@ -384,8 +383,16 @@ def attention(Q, K, V, mask=True):
         output    ->   [[1.000, 0.000],
                         [0.330, 0.670]]
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    d_k = Q.shape[-1]
+    n = Q.shape[-2]
+    scores = Q @ K.swapaxes(-1, -2) / np.sqrt(d_k)
+
+    if mask:
+        scores = np.where(causal_mask(n), -np.inf, scores)
+
+    weights = softmax(scores)
+    output = weights @ V
+    return output, weights
 
 # ============================================================================
 # 3. Multiple heads  (GPT-2: 12 heads, each gets a 64-dim slice of Q, K, V)
@@ -411,8 +418,9 @@ def split_heads(x, n_heads):
 
     Hint: reshape to (n, n_heads, d_head), then transpose(1, 0, 2).
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    n, d = x.shape
+    d_head = d // n_heads
+    return x.reshape(n, n_heads, d_head).transpose(1, 0, 2)
 
 
 def merge_heads(x):
@@ -430,8 +438,8 @@ def merge_heads(x):
                                                           [4, 5, 6, 7]]
         merge_heads(split_heads(x, n_heads)) should give back x exactly.
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    n_heads, n, d_head = x.shape
+    return x.transpose(1, 0, 2).reshape(n, n_heads * d_head)
 
 
 def multi_head_attention(x, block, n_heads=N_HEADS):
@@ -458,8 +466,16 @@ def multi_head_attention(x, block, n_heads=N_HEADS):
     Example (GPT-2, 6 tokens):
         x.shape = (6, 768)   ->   output.shape = (6, 768),   weights.shape = (12, 6, 6)
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    qkv = x @ block["W_qkv"] + block["b_qkv"]
+    Q, K, V = np.split(qkv, 3, axis=-1)
+
+    Q = split_heads(Q, n_heads)
+    K = split_heads(K, n_heads)
+    V = split_heads(V, n_heads)
+
+    out, weights = attention(Q, K, V, mask=True)
+    out = merge_heads(out) @ block["W_O"] + block["b_O"]
+    return out, weights
 
 # ============================================================================
 # 4. Finding heads that do specific jobs
@@ -486,8 +502,12 @@ def head_scores(cache, offset):
     Hint: for one layer's w (n_heads, n, n):  i = np.arange(offset, n);  w[:, i, i - offset]
           picks those entries for every head at once, shape (n_heads, n - offset). Average over the last axis.
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
+    scores = []
+    for weights in cache:
+        n = weights.shape[-1]
+        positions = np.arange(offset, n)
+        scores.append(weights[:, positions, positions - offset].mean(axis=-1))
+    return np.array(scores)
 
 
 # Provided helpers for section 4
@@ -538,4 +558,4 @@ def top_heads(scores, k=5):
 if __name__ == "__main__":
     print("To check your functions, run:  python test_part2.py")
     # Once attention works, uncomment to see a heatmap of one head:
-    # plot_attention("The old cat sat on the mat because it was tired.", layer=4, head=11)
+    plot_attention("The old cat sat on the mat because it was tired.", layer=4, head=11)
